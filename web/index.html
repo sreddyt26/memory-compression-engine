@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memory Compression Engine</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel-2:#1c2330;
+    --ink:#e6edf3; --muted:#7d8590; --faint:#4a5568;
+    --raw:#3fb950; --light:#d29922; --heavy:#8b5cf6;
+    --accent:#58a6ff; --line:#21262d; --danger:#f85149;
+    --mono:'SF Mono',ui-monospace,'Cascadia Code','Courier New',monospace;
+    --sans:'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.5;min-height:100vh}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
+
+  header{border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:24px}
+  .brandline{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  h1{font-size:26px;font-weight:650;letter-spacing:-.5px}
+  h1 .dim{color:var(--muted);font-weight:400}
+  .sub{color:var(--muted);font-size:14px;margin-top:6px;max-width:640px}
+  .tiers-legend{display:flex;gap:16px;margin-top:14px;font-size:12px;
+    font-family:var(--mono);flex-wrap:wrap}
+  .tiers-legend span{display:flex;align-items:center;gap:6px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .dot.raw{background:var(--raw)} .dot.light{background:var(--light)}
+  .dot.heavy{background:var(--heavy)}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:820px){.grid{grid-template-columns:1fr}}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:18px}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:1.2px;
+    color:var(--muted);margin-bottom:14px;font-weight:600}
+
+  textarea,input[type=text]{width:100%;background:var(--bg);color:var(--ink);
+    border:1px solid var(--line);border-radius:8px;padding:11px 13px;
+    font-family:var(--sans);font-size:14px;resize:vertical}
+  textarea:focus,input:focus{outline:none;border-color:var(--accent)}
+  textarea{min-height:92px}
+
+  .row{display:flex;gap:10px;margin-top:10px}
+  button{background:var(--accent);color:#04121f;border:none;border-radius:8px;
+    padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;
+    transition:filter .12s}
+  button:hover{filter:brightness(1.12)}
+  button.ghost{background:transparent;color:var(--muted);
+    border:1px solid var(--line)}
+  button.ghost:hover{color:var(--ink);border-color:var(--muted);filter:none}
+
+  .hint{color:var(--faint);font-size:12px;margin-top:8px;font-family:var(--mono)}
+
+  /* memory list */
+  .mem{border:1px solid var(--line);border-left-width:3px;border-radius:7px;
+    padding:11px 13px;margin-bottom:10px;background:var(--panel-2);
+    transition:opacity .3s}
+  .mem.raw{border-left-color:var(--raw)}
+  .mem.light{border-left-color:var(--light);opacity:.9}
+  .mem.heavy{border-left-color:var(--heavy);opacity:.72}
+  .mem-top{display:flex;justify-content:space-between;align-items:center;
+    font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:6px}
+  .badge{padding:1px 7px;border-radius:4px;font-weight:600;letter-spacing:.5px}
+  .badge.raw{background:rgba(63,185,80,.15);color:var(--raw)}
+  .badge.light{background:rgba(210,153,34,.15);color:var(--light)}
+  .badge.heavy{background:rgba(139,92,246,.18);color:var(--heavy)}
+  .mem-text{font-size:14px}
+  .mem-meta{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:6px}
+  .mem-orig{font-size:12px;color:var(--faint);margin-top:5px;
+    padding-top:5px;border-top:1px dashed var(--line);display:none}
+  .mem.compressed .mem-orig{display:block}
+
+  /* retrieval results */
+  .result{border:1px solid var(--line);border-radius:7px;padding:11px 13px;
+    margin-bottom:9px;background:var(--panel-2)}
+  .result .score{font-family:var(--mono);font-size:11px;color:var(--accent);
+    margin-bottom:4px}
+  .result.top{border-color:var(--accent)}
+
+  /* stats */
+  .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .stat{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+    padding:12px}
+  .stat .num{font-family:var(--mono);font-size:22px;font-weight:650;
+    color:var(--accent)}
+  .stat .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;
+    letter-spacing:.8px;margin-top:3px}
+  .bar{height:7px;background:var(--bg);border-radius:4px;overflow:hidden;
+    margin-top:14px;display:flex}
+  .bar i{height:100%}
+  .bar i.raw{background:var(--raw)} .bar i.light{background:var(--light)}
+  .bar i.heavy{background:var(--heavy)}
+
+  .empty{color:var(--faint);font-size:13px;font-style:italic;
+    text-align:center;padding:22px 0}
+  .seed{margin-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brandline">
+      <h1>Memory Compression Engine <span class="dim">/ live</span></h1>
+    </div>
+    <p class="sub">Stores what you tell it as compressed memories. Recent
+      memories stay sharp; older ones decay to gist — then it retrieves the
+      relevant ones on demand. Everything runs in your browser.</p>
+    <div class="tiers-legend">
+      <span><i class="dot raw"></i>raw — full fidelity (newest)</span>
+      <span><i class="dot light"></i>light — condensed</span>
+      <span><i class="dot heavy"></i>heavy — gist (oldest)</span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- LEFT: input + retrieval -->
+    <div>
+      <div class="card">
+        <h2>Add a memory</h2>
+        <textarea id="inp" placeholder="Type a note, a fact, a conversation turn... Paste a paragraph to see compression kick in."></textarea>
+        <div class="row">
+          <button onclick="addMemory()">Store memory</button>
+          <button class="ghost" onclick="seedDemo()">Load sample</button>
+          <button class="ghost" onclick="resetAll()">Clear all</button>
+        </div>
+        <p class="hint">Single sentences store as-is. Multi-sentence text gets compressed.</p>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h2>Ask your memory</h2>
+        <input type="text" id="q" placeholder="e.g. what is the budget and deadline?"
+               onkeydown="if(event.key==='Enter')askMemory()">
+        <div class="row"><button onclick="askMemory()">Retrieve</button></div>
+        <div id="results" style="margin-top:14px"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: memory state + stats -->
+    <div>
+      <div class="card">
+        <h2>Stored memories <span id="count" style="color:var(--faint)"></span></h2>
+        <div id="memlist"><div class="empty">No memories yet. Add one, or load the sample.</div></div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h2>Compression stats</h2>
+        <div id="statsbox"><div class="empty">Stats appear once you store memories.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   MEMORY COMPRESSION ENGINE  —  JavaScript port of the Python project
+   TF-IDF vectors, cosine retrieval, hierarchical decay. No libraries.
+   ===================================================================== */
+
+const STOP = new Set("the a an and or but is are was were to of in on for we i it that this with as at by be our they them he she not so just some about already again up".split(" "));
+const CUES = new Set("decided agreed must need important deadline name email prefer want goal problem because never always remember note key budget date".split(" "));
+
+const RAW_WINDOW = 2;     // newest N stay raw
+const LIGHT_WINDOW = 3;   // next M stay light, rest heavy
+
+let memories = [];        // {source, text, tier, importance, tOrig, tComp}
+
+/* ---------- text helpers ---------- */
+function tokenize(t){
+  return (t.toLowerCase().match(/[a-z0-9]+/g)||[])
+    .filter(w=>!STOP.has(w) && w.length>1);
+}
+function splitSentences(t){
+  return t.trim().split(/(?<=[.!?])\s+/).map(s=>s.trim()).filter(s=>s.length);
+}
+function approxTokens(t){ return Math.max(1, Math.round(t.split(/\s+/).length/0.75)); }
+
+function keywordScore(s){
+  const words=new Set((s.toLowerCase().match(/[a-z]+/g)||[]));
+  let hits=0; words.forEach(w=>{ if(CUES.has(w)) hits++; });
+  return hits + (/\d/.test(s)?0.5:0);
+}
+function importance(text){
+  const sents=splitSentences(text);
+  if(!sents.length) return 0;
+  const kw=sents.reduce((a,s)=>a+keywordScore(s),0)/sents.length;
+  const len=Math.min(sents.length/10,1);
+  return Math.min(0.7*Math.min(kw/2,1)+0.3*len,1);
+}
+
+/* ---------- TF-IDF over a set of docs ---------- */
+function buildTfidf(docs){
+  const toks=docs.map(tokenize);
+  const df={}; const N=docs.length;
+  toks.forEach(ts=>{ new Set(ts).forEach(w=>df[w]=(df[w]||0)+1); });
+  const idf=w=>Math.log((1+N)/(1+(df[w]||0)))+1;
+  function vec(text){
+    const ts=tokenize(text); if(!ts.length) return {};
+    const tf={}; ts.forEach(w=>tf[w]=(tf[w]||0)+1);
+    const v={}; for(const w in tf) v[w]=(tf[w]/ts.length)*idf(w);
+    let n=0; for(const w in v) n+=v[w]*v[w]; n=Math.sqrt(n)||1;
+    for(const w in v) v[w]/=n;
+    return v;
+  }
+  return {vec};
+}
+function cosine(a,b){
+  let [x,y]=Object.keys(a).length>Object.keys(b).length?[b,a]:[a,b];
+  let s=0; for(const w in x) if(y[w]) s+=x[w]*y[w];
+  return s;
+}
+
+/* ---------- extractive compression ---------- */
+function extractiveCompress(text, keepRatio){
+  const sents=splitSentences(text);
+  if(sents.length<=1) return text.trim();
+  const {vec}=buildTfidf(sents);
+  const vecs=sents.map(vec);
+  // centroid
+  const cen={};
+  vecs.forEach(v=>{ for(const w in v) cen[w]=(cen[w]||0)+v[w]; });
+  for(const w in cen) cen[w]/=vecs.length;
+  let cn=0; for(const w in cen) cn+=cen[w]*cen[w]; cn=Math.sqrt(cn)||1;
+  for(const w in cen) cen[w]/=cn;
+
+  const centrality=vecs.map(v=>cosine(v,cen));
+  let kw=sents.map(keywordScore); const kmax=Math.max(...kw)||1; kw=kw.map(k=>k/kmax);
+  const score=sents.map((_,i)=>0.35*centrality[i]+0.65*kw[i]);
+  const k=Math.max(1, Math.round(sents.length*keepRatio));
+  const idx=score.map((s,i)=>[s,i]).sort((a,b)=>b[0]-a[0])
+    .slice(0,k).map(p=>p[1]).sort((a,b)=>a-b);
+  return idx.map(i=>sents[i]).join(" ");
+}
+
+function compress(text, tier){
+  const keep={raw:1,light:0.6,heavy:0.4}[tier]??0.6;
+  const compressed = tier==="raw" ? text.trim() : extractiveCompress(text, keep);
+  return {
+    source:text.trim(), text:compressed, tier,
+    importance:importance(text),
+    tOrig:approxTokens(text), tComp:approxTokens(compressed)
+  };
+}
+
+/* ---------- store operations ---------- */
+function applyDecay(){
+  const n=memories.length;
+  for(let i=0;i<n;i++){
+    const age=n-1-i;
+    let target = age<RAW_WINDOW ? "raw"
+               : age<RAW_WINDOW+LIGHT_WINDOW ? "light" : "heavy";
+    if(memories[i].importance>=0.6 && target==="heavy") target="light";
+    if(memories[i].tier!==target)
+      memories[i]=compress(memories[i].source, target);
+  }
+}
+function addMemoryText(text){
+  memories.push(compress(text,"raw"));
+  applyDecay();
+}
+function retrieve(query,k=3){
+  if(!memories.length) return [];
+  const {vec}=buildTfidf(memories.map(m=>m.text));
+  const qv=vec(query);
+  const vecs=memories.map(m=>vec(m.text));
+  return memories.map((m,i)=>[cosine(qv,vecs[i]),m])
+    .sort((a,b)=>b[0]-a[0]).slice(0,k);
+}
+
+/* ---------- UI ---------- */
+function addMemory(){
+  const el=document.getElementById("inp");
+  const t=el.value.trim(); if(!t) return;
+  addMemoryText(t); el.value=""; render();
+}
+function askMemory(){
+  const q=document.getElementById("q").value.trim();
+  const box=document.getElementById("results");
+  if(!q){ box.innerHTML=""; return; }
+  const hits=retrieve(q,3);
+  if(!hits.length){ box.innerHTML='<div class="empty">No memories stored yet.</div>'; return; }
+  box.innerHTML=hits.map(([s,m],i)=>`
+    <div class="result ${i===0?'top':''}">
+      <div class="score">score ${s.toFixed(3)} · ${m.tier}</div>
+      <div>${escapeHtml(m.text)}</div>
+    </div>`).join("");
+}
+function render(){
+  document.getElementById("count").textContent = memories.length?`(${memories.length})`:"";
+  const list=document.getElementById("memlist");
+  if(!memories.length){
+    list.innerHTML='<div class="empty">No memories yet. Add one, or load the sample.</div>';
+  }else{
+    // newest first for display
+    list.innerHTML=memories.map((m,i)=>{
+      const compressed = m.tier!=="raw" && m.text!==m.source;
+      const ratio=(m.tComp/m.tOrig).toFixed(2);
+      return `<div class="mem ${m.tier} ${compressed?'compressed':''}">
+        <div class="mem-top">
+          <span class="badge ${m.tier}">${m.tier.toUpperCase()}</span>
+          <span>#${i} · importance ${m.importance.toFixed(2)} · ratio ${ratio}</span>
+        </div>
+        <div class="mem-text">${escapeHtml(m.text)}</div>
+        ${compressed?`<div class="mem-orig">original: ${escapeHtml(m.source)}</div>`:""}
+      </div>`;
+    }).reverse().join("");
+  }
+  renderStats();
+}
+function renderStats(){
+  const box=document.getElementById("statsbox");
+  if(!memories.length){ box.innerHTML='<div class="empty">Stats appear once you store memories.</div>'; return; }
+  const orig=memories.reduce((a,m)=>a+m.tOrig,0);
+  const comp=memories.reduce((a,m)=>a+m.tComp,0);
+  const saved=(100*(1-comp/orig)).toFixed(1);
+  const ratio=(comp/orig).toFixed(3);
+  const tiers={raw:0,light:0,heavy:0};
+  memories.forEach(m=>tiers[m.tier]++);
+  const n=memories.length;
+  box.innerHTML=`
+    <div class="stats">
+      <div class="stat"><div class="num">${n}</div><div class="lbl">memories</div></div>
+      <div class="stat"><div class="num">${saved}%</div><div class="lbl">space saved</div></div>
+      <div class="stat"><div class="num">${ratio}</div><div class="lbl">compression ratio</div></div>
+      <div class="stat"><div class="num">${orig}→${comp}</div><div class="lbl">tokens</div></div>
+    </div>
+    <div class="bar">
+      <i class="raw"   style="width:${100*tiers.raw/n}%"></i>
+      <i class="light" style="width:${100*tiers.light/n}%"></i>
+      <i class="heavy" style="width:${100*tiers.heavy/n}%"></i>
+    </div>
+    <p class="hint">${tiers.raw} raw · ${tiers.light} light · ${tiers.heavy} heavy</p>`;
+}
+function escapeHtml(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+function resetAll(){ memories=[]; document.getElementById("results").innerHTML=""; render(); }
+function seedDemo(){
+  memories=[];
+  [
+    "My name is Rishi and I'm planning a product launch. My email is rishi@example.com and I prefer to be contacted by email, not phone. This is background chit chat about the weather being nice.",
+    "We decided the launch date must be September 15th. The budget is $12,000 and cannot go higher because finance already approved that exact number. The main goal is to get 500 signups in the first week.",
+    "The design team wants a blue and white color scheme. Someone mentioned they had lunch at a cafe. The logo needs to be finalized by August 20th, that is an important deadline.",
+    "The marketing channels we agreed on are email newsletters and LinkedIn ads. We are NOT using paid Google ads because they are too expensive. Also the coffee machine is broken again.",
+    "The venue for the launch event is the Downtown Convention Center. It holds 300 people. We need catering, and the preferred vendor is Green Leaf Catering because they handle vegetarian options.",
+    "The CEO wants a demo video ready before launch. The video must be under 2 minutes. Random aside, traffic was terrible this morning."
+  ].forEach(addMemoryText);
+  document.getElementById("q").value="what is the budget and launch date?";
+  render(); askMemory();
+}
+render();
+</script>
+</body>
+</html>
